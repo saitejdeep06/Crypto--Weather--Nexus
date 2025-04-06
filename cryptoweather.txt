@@ -1,0 +1,240 @@
+# Crypto--Weather--Nexus
+
+code for cryptoweather Nexus
+// Root: /app/layout.tsx
+import "../styles/globals.css";
+import { Toaster } from "react-hot-toast";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body className="bg-gray-100 text-gray-900">
+        <Toaster position="top-right" />
+        {children}
+      </body>
+    </html>
+  );
+}
+
+// /app/page.tsx (Dashboard)
+import WeatherSection from "../components/WeatherSection";
+import CryptoSection from "../components/CryptoSection";
+import NewsSection from "../components/NewsSection";
+import FavoritesSection from "../components/FavoritesSection";
+
+export default function HomePage() {
+  return (
+    <main className="p-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <WeatherSection />
+      <CryptoSection />
+      <NewsSection />
+      <FavoritesSection />
+    </main>
+  );
+}
+
+// FavoritesSlice.ts
+// /redux/favoritesSlice.ts
+import { createSlice, PayloadAction } from "@reduxjs/toolkit";
+import { toast } from "react-hot-toast";
+
+interface FavoriteItem {
+  id: string;
+  type: "crypto" | "weather" | "news";
+  label: string;
+  link: string;
+}
+
+interface FavoritesState {
+  items: FavoriteItem[];
+}
+
+const initialState: FavoritesState = {
+  items: [],
+};
+
+const favoritesSlice = createSlice({
+  name: "favorites",
+  initialState,
+  reducers: {
+    addFavorite: (state, action: PayloadAction<FavoriteItem>) => {
+      if (!state.items.some(item => item.id === action.payload.id && item.type === action.payload.type)) {
+        state.items.push(action.payload);
+        toast.success("Added to favorites!");
+      }
+    },
+    removeFavorite: (state, action: PayloadAction<{ id: string; type: string }>) => {
+      state.items = state.items.filter(item => item.id !== action.payload.id || item.type !== action.payload.type);
+      toast("Removed from favorites", { icon: "🗑️" });
+    },
+    clearFavorites: (state) => {
+      state.items = [];
+      toast("All favorites cleared", { icon: "🧹" });
+    },
+  },
+});
+
+export const { addFavorite, removeFavorite, clearFavorites } = favoritesSlice.actions;
+export default favoritesSlice.reducer;
+
+// /redux/store.ts
+import { configureStore } from "@reduxjs/toolkit";
+import favoritesReducer from "./favoritesSlice";
+import storage from "redux-persist/lib/storage";
+import { persistReducer, persistStore } from "redux-persist";
+import { combineReducers } from "redux";
+import thunk from "redux-thunk";
+
+const persistConfig = {
+  key: "root",
+  storage,
+};
+
+const rootReducer = combineReducers({
+  favorites: favoritesReducer,
+});
+
+const persistedReducer = persistReducer(persistConfig, rootReducer);
+
+export const store = configureStore({
+  reducer: persistedReducer,
+  middleware: [thunk],
+});
+
+export const persistor = persistStore(store);
+export type RootState = ReturnType<typeof store.getState>;
+export type AppDispatch = typeof store.dispatch;
+
+// /redux/provider.tsx
+"use client";
+import { Provider } from "react-redux";
+import { store, persistor } from "./store";
+import { PersistGate } from "redux-persist/integration/react";
+
+export default function ReduxProvider({ children }: { children: React.ReactNode }) {
+  return (
+    <Provider store={store}>
+      <PersistGate loading={null} persistor={persistor}>
+        {children}
+      </PersistGate>
+    </Provider>
+  );
+}
+
+// In layout.tsx, wrap children with ReduxProvider
+// import ReduxProvider from "../redux/provider";
+// ...
+// <body> <ReduxProvider>{children}</ReduxProvider> </body>
+
+// /components/FavoritesSection.tsx
+"use client";
+import Link from "next/link";
+import { useAppSelector, useAppDispatch } from "../redux/hooks";
+import { removeFavorite, clearFavorites } from "../redux/favoritesSlice";
+
+export default function FavoritesSection() {
+  const { items } = useAppSelector((state) => state.favorites);
+  const dispatch = useAppDispatch();
+
+  return (
+    <section className="p-4 bg-yellow-50 border border-yellow-300 rounded-2xl shadow col-span-full">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xl font-bold">Favorites</h2>
+        {items.length > 0 && (
+          <button
+            onClick={() => dispatch(clearFavorites())}
+            className="text-sm text-red-500 hover:underline"
+          >
+            Clear All
+          </button>
+        )}
+      </div>
+      {items.length === 0 ? (
+        <p>No favorites yet. Click ★ to add!</p>
+      ) : (
+        <ul>
+          {items.map((item) => (
+            <li key={`${item.type}-${item.id}`} className="mb-2 flex items-center justify-between">
+              <Link href={item.link} className="text-yellow-700 hover:underline">
+                ★ {item.label}
+              </Link>
+              <button
+                onClick={() => dispatch(removeFavorite({ id: item.id, type: item.type }))}
+                className="text-red-500 hover:scale-110 transition text-sm"
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// /components/FavoriteButton.tsx
+"use client";
+import { useAppDispatch } from "../redux/hooks";
+import { addFavorite } from "../redux/favoritesSlice";
+
+interface FavoriteButtonProps {
+  id: string;
+  type: "crypto" | "weather" | "news";
+  label: string;
+  link: string;
+}
+
+export default function FavoriteButton({ id, type, label, link }: FavoriteButtonProps) {
+  const dispatch = useAppDispatch();
+
+  return (
+    <button
+      className="text-yellow-500 text-xl ml-2 hover:scale-110 transition"
+      onClick={() => dispatch(addFavorite({ id, type, label, link }))}
+    >
+      ★
+    </button>
+  );
+}
+
+// /app/crypto/[id]/page.tsx
+import FavoriteButton from "../../../components/FavoriteButton";
+
+export default function CryptoDetail({ params }: { params: { id: string } }) {
+  const id = params.id;
+  return (
+    <div className="p-4">
+      <h1 className="text-2xl font-bold">
+        {id.toUpperCase()} <FavoriteButton id={id} type="crypto" label={id} link={`/crypto/${id}`} />
+      </h1>
+    </div>
+  );
+}
+
+// /app/weather/[city]/page.tsx
+import FavoriteButton from "../../../components/FavoriteButton";
+
+export default function WeatherDetail({ params }: { params: { city: string } }) {
+  const city = params.city;
+  return (
+    <div className="p-4">
+      <h1 className="text-2xl font-bold">
+        {city} Weather <FavoriteButton id={city} type="weather" label={city} link={`/weather/${city}`} />
+      </h1>
+    </div>
+  );
+}
+
+// /app/news/[index]/page.tsx
+import FavoriteButton from "../../../components/FavoriteButton";
+
+export default function NewsDetail({ params }: { params: { index: string } }) {
+  const index = params.index;
+  return (
+    <div className="p-4">
+      <h1 className="text-2xl font-bold">
+        News #{index} <FavoriteButton id={index} type="news" label={`Article ${index}`} link={`/news/${index}`} />
+      </h1>
+    </div>
+  );
+}
